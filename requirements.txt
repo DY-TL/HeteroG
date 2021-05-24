@@ -1,0 +1,8 @@
+six
+numpy
+wheel
+keras_preprocessing
+setuptools==41.0.0
+scipy
+networkx
+sklearn
