@@ -5,9 +5,11 @@ from scipy.sparse import csr_matrix
 from models import GAT
 from models import SpGAT
 from gat_utils import process
-from data_process.dataset import GraphDataset, WhiteSpaceTokenizer,NewWhiteSpaceTokenizer
+from data_process.dataset import GraphDataset, WhiteSpaceTokenizer, \
+                                    NewWhiteSpaceTokenizer
 from data_process.example import load_M10, load_cora, load_dblp
-from data_process.meta_network import MetaNetwork, N_TYPE_NODE, N_TYPE_LABEL, IdIndexer
+from data_process.meta_network import MetaNetwork, N_TYPE_NODE, N_TYPE_LABEL, \
+                                        IdIndexer
 from transformer.model import transformer
 import google.protobuf.text_format as pbtf
 from tensorflow.core.framework import graph_pb2
@@ -17,7 +19,6 @@ import sys
 import os
 import scipy.sparse as sp
 import traceback
-import pickle
 sys.path.append('../')
 import tge
 import json
@@ -26,13 +27,18 @@ import multiprocessing as mp
 from utils import group_around_topk_costs
 import logging
 import math
+
+
 def InitLog():
     log = logging.getLogger(__name__)
     log.setLevel(logging.DEBUG)
     # log to txt
+    log_dir = 'log'
+    os.makedirs(log_dir, exist_ok=True)
     formatter = logging.Formatter('[%(asctime)s] %(message)s')
-    handler = logging.FileHandler("log/log_%s.txt" % time.strftime("%Y-%m-%d-%H-%M-%S"))
-    # handler = logging.handlers.RotatingFileHandler("log_%s.txt" % time.strftime("%Y-%m-%d %H-%M-%S"),maxBytes=1024*1024,backupCount=50)
+    log_file = 'log_{}.txt'.format(time.strftime("%Y-%m-%d-%H-%M-%S"))
+    log_file_path = os.path.join(log_dir, log_file)
+    handler = logging.FileHandler(log_file_path)
     handler.setLevel(logging.DEBUG)
     handler.setFormatter(formatter)
     # log to console
@@ -41,6 +47,7 @@ def InitLog():
     log.addHandler(handler)
     log.addHandler(console)
     return log
+
 
 logger = InitLog()
 variable_ops=["Variable", "VariableV2", "AutoReloadVariable",
@@ -122,7 +129,7 @@ device_mems = config_dict.get("device_mems", [16 * 10e9, 16 * 10e9, 16 * 10e9, 1
 
 sample_prob = 0.7
 
-d_model= 512
+d_model = 512
 
 def post_process_device_choice(device_choice,batch_size):
     print("before process")
@@ -148,14 +155,13 @@ def post_process_device_choice(device_choice,batch_size):
     print(new_device_choice)
     return new_device_choice,mask
 
+
 def generate_mask(device_choice):
     mask = np.zeros(shape=(device_choice.shape[0],),dtype=np.int32)
     for i in range(device_choice.shape[0]):
         if sum(device_choice[i])!=1:
             mask[i] = 1
     return mask
-
-
 
 
 class strategy_pool(object):
@@ -350,12 +356,16 @@ class strategy_pool(object):
         index = np.random.randint(0,len(self.strategies))
         #index = self.rewards.index(max(self.rewards))
         return self.strategies[index]
+
+
 def reward_func(item):
     new_device_array = np.zeros(shape=(len(devices)),dtype=np.int32)
     for j in range(len(item)):
         if item[j]!=-1 and item[j]!=len(devices):
             new_device_array[item[j]]+=1
     return new_device_array
+
+
 class Environment(object):
     def __init__(self,gdef_path,devices,folder_path,batch_size,init_group,sink):
 
@@ -1153,5 +1163,4 @@ def main_entry():
 
 
 if __name__ == '__main__':
-
     main_entry()

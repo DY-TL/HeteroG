@@ -41,7 +41,6 @@ def rel_shift(x):
   return x
 
 
-
 def rel_multihead_attn(w, r, r_w_bias, r_r_bias, attn_mask, mems, d_model,
                        n_head, d_head, dropout, dropatt, is_training,
                        kernel_initializer, w0,scope='rel_attn'):
@@ -426,6 +425,7 @@ def _create_mask(qlen, mlen, same_length=False):
     ret = tf.concat([ret[:, :qlen] + mask_l - mask_dia, ret[:, qlen:]], 1)
   return ret
 
+
 def _cache_mem(curr_out, prev_mem, mem_len=None):
   if mem_len is None or prev_mem is None:
     new_mem = curr_out
@@ -516,6 +516,7 @@ def transformer(dec_inp, mems, n_layer, d_model,
     output = tf.layers.dropout(output, dropout, training=is_training)
 
     return output, new_mems
+
 
 def old_transformer(dec_inp, target, mems, n_token, n_layer, d_model, d_embed,
                 n_head, d_head, d_inner, dropout, dropatt,
