@@ -196,13 +196,13 @@ def generate_edge_file(null_gdef,folder):
         f.write(pbtf.MessageToString(null_gdef))
     name_list = [nodedef.name for nodedef in null_gdef.node]
     item_list=[]
-    for i,nodedef in enumerate(null_gdef.node):
-        for j,input in enumerate(nodedef.input):
+    for i, nodedef in enumerate(null_gdef.node):
+        for j, input in enumerate(nodedef.input):
             if ':' in input:
                 index = int(input.split(':')[1])
                 input = input.split(':')[0]
             else:
-                index=0
+                index = 0
 
             if input[0]=='^':
                 input_node_idx = name_list.index(input[1:])
@@ -222,10 +222,10 @@ def generate_edge_file(null_gdef,folder):
         f.writelines(item_list)
 
 
-def generate_nccl_model():
-    model = NcclProfiler(devices,server.target).profile()
-    with open('data/nccl_model.pkl','wb') as f:
-        pkl.dump(model,f)
+def generate_nccl_model(devices, server):
+    model = NcclProfiler(devices, server.target).profile()
+    with open('data/nccl_model.pkl', 'wb') as f:
+        pkl.dump(model, f)
 
 
 def generate_feature_file(index, model_name, server, sinks, devices):
@@ -348,11 +348,11 @@ def main():
     #   'vgg19', 'resnet200', 'mobile_net', 'resnet101', 'resnet152', 
     #   'inceptionv3', 'transformer', 'bert', 'small',
     #]
-    models = ['vgg19']
+    models = ['vgg19'] # TODO: models will be configured by config.txt
     for idx, model_name in enumerate(models):
         tf.reset_default_graph()
         generate_feature_file(idx, model_name, server, sinks, devices)
-    #generate_nccl_model()
+    generate_nccl_model(devices, server)
 
 
 if __name__ == '__main__':
