@@ -6,3 +6,6 @@ heterog_venv
 .vscode
 
 log
+*.log
+
+data/
