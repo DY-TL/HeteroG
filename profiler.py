@@ -1,3 +1,4 @@
+from networkx.generators.atlas import NUM_GRAPHS
 import numpy as np
 import tensorflow as tf
 import re
@@ -8,6 +9,7 @@ from sklearn.linear_model import HuberRegressor
 from tensorflow.python.ops import collective_ops
 
 PROFILE_NUM = 1 # 5
+MAX_NUM_RETRAIN_TO_CONVERGE = 3
 
 class NcclProfiler:
     def __init__(self, devices, target, seed=3399):
@@ -45,13 +47,19 @@ class NcclProfiler:
         return results
 
     def _model(self, data):
-        model1 = HuberRegressor().fit([[x] for x, y in data if x <= 2**9],
-                                      [y for x, y in data if x <= 2**9])
-        model2 = HuberRegressor().fit([[x] for x, y in data if x >= 2**10],
-                                      [y for x, y in data if x >= 2**10])
+        for num_train in range(MAX_NUM_RETRAIN_TO_CONVERGE):
+            try:
+                print('Start train linear regression model')
+                print('Number of train:', num_train + 1)
+                model1 = HuberRegressor().fit([[x] for x, y in data if x <= 2**9],
+                                            [y for x, y in data if x <= 2**9])
+                model2 = HuberRegressor().fit([[x] for x, y in data if x >= 2**10],
+                                            [y for x, y in data if x >= 2**10])
 
-        return [model1.coef_[0].item(), model1.intercept_.item(),
-                model2.coef_[0].item(), model2.intercept_.item()]
+                return [model1.coef_[0].item(), model1.intercept_.item(),
+                        model2.coef_[0].item(), model2.intercept_.item()]
+            except Exception as e:
+                print(e)
 
     def _profile(self, devices):
         seed = self.seed

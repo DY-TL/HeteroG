@@ -1,21 +1,21 @@
 # coding=utf-8
 import time
+import sys
+import json
+import os
+import time
+import pickle as pkl
+
 import numpy as np
 import tensorflow as tf
 import google.protobuf.text_format as pbtf
 from tensorflow.python.client import timeline
 from tensorflow.core.framework import node_def_pb2
-import sys
-import json
-import os
-import urllib.request
-import time
 from tensorflow.core.framework import graph_pb2
 from tensorflow.core.framework import step_stats_pb2
 import google.protobuf.text_format as pbtf
-import pickle as pkl
-
 from tensorflow.python.distribute.distribution_strategy_context import experimental_set_strategy
+
 sys.path.append('../')
 sys.path.append('./modeltransformer/')
 sys.path.append('./bert/')
@@ -26,18 +26,6 @@ from tensorflow.distribute.cluster_resolver import TFConfigClusterResolver
 import traceback
 
 
-"""
-def setup_workers(workers, protocol='grpc'):
-    param = '/'.join(server.replace(':', '%3A') for server in workers)
-    for task_id, server in enumerate(workers):
-        if task_id == 0: continue
-        url = 'http://{}:3905/{}/restart/{}/{}/{}'.format(server.split(':')[0], 
-                                                          int(time.time()) + 10,
-                                                          protocol, task_id,
-                                                          param)
-        assert urllib.request.urlopen(url).read() == b'ok'
-    time.sleep(1)
-"""
 def get_config_dict():
     config_dict = dict()
     if os.path.exists('config.txt'):
