@@ -60,7 +60,7 @@ variable_ops=["Variable", "VariableV2", "AutoReloadVariable",
                    "DecisionTreeResource"]
 
 
-checkpt_file = 'pre_trained/cora/mod_cora.ckpt'
+ckpt_file = 'pre_trained/cora/mod_cora.ckpt'
 _dataset = 'cora'
 
 config_dict = dict()
@@ -72,7 +72,7 @@ if os.path.exists("config.txt"):
 os.environ["CUDA_VISIBLE_DEVICES"]=config_dict.get("CUDA_VISIBLE_DEVICES","0,1")
 #os.environ["TF_XLA_FLAGS"]="--tf_xla_cpu_global_jit"
 batch_size = 1
-nb_epochs = 100000
+num_steps = 100 #100000
 patience = 100
 lr = config_dict.get("learning_rate", 0.01)  # learning rate
 l2_coef = 0.0002  # weight decay
@@ -81,23 +81,17 @@ n_heads = [4, 4]  # additional entry for the output layer
 place_hid_units = [512,256]
 place_n_heads = [4,4,1]
 residual = True
-
-
-global_batch_size=288
-
-n_layer=12
-n_head=8
-d_head=64
-d_inner=2048
+global_batch_size = 288
+n_layer = 12
+n_head = 8
+d_head = 64
+d_inner = 2048
 group_num = 2000
-bsz =1
-
-
-
-
+bsz = 1
 nonlinearity = tf.nn.elu
 model = SpGAT
 is_transformer = True
+
 print('Dataset: ' + _dataset)
 print('----- Opt. hyperparams -----')
 print('lr: ' + str(lr))
@@ -109,27 +103,32 @@ print('nb. attention heads: ' + str(n_heads))
 print('residual: ' + str(residual))
 print('nonlinearity: ' + str(nonlinearity))
 print('model: ' + str(model))
-feature_folders = config_dict.get("inputs",["data/graph1", "data/graph2", "data/graph3", "data/graph4", "data/graph5", "data/graph6","data/graph7","data/graph8"])
-sinks =  config_dict.get("sinks",[["Adam"], ["Adam"], ["Adam"], ["Adam"], ["Adam"], ["Adam"],["Adam"],["Adam"],["Adam"]])
+
+feature_folders = config_dict.get("inputs", [
+                        "data/graph1", "data/graph2", "data/graph3",
+                        "data/graph4", "data/graph5", "data/graph6",
+                        "data/graph7","data/graph8"])
+sinks =  config_dict.get("sinks", [
+                ["Adam"], ["Adam"], ["Adam"], ["Adam"], ["Adam"], ["Adam"],
+                ["Adam"],["Adam"],["Adam"]])
 sample_times = 2
 devices = config_dict.get("devices", [
-    "/job:worker/replica:0/task:0/device:GPU:0",
-    "/job:worker/replica:0/task:0/device:GPU:1",
-    "/job:worker/replica:0/task:1/device:GPU:0",
-    "/job:worker/replica:0/task:1/device:GPU:1",
-    "/job:worker/replica:0/task:2/device:GPU:0",
-    "/job:worker/replica:0/task:2/device:GPU:1"
-
-])
+                "/job:worker/replica:0/task:0/device:GPU:0",
+                "/job:worker/replica:0/task:0/device:GPU:1",
+                "/job:worker/replica:0/task:1/device:GPU:0",
+                "/job:worker/replica:0/task:1/device:GPU:1",
+                "/job:worker/replica:0/task:2/device:GPU:0",
+                "/job:worker/replica:0/task:2/device:GPU:1"])
 batch_sizes = config_dict.get("batch_sizes", [48 * 2, 288 * 2, 6 * 2])
 
 max_replica_num = config_dict.get("max_replica_num", len(devices))
 show_interval = 3
-device_mems = config_dict.get("device_mems", [16 * 10e9, 16 * 10e9, 16 * 10e9, 16 * 10e9])
+device_mems = config_dict.get("device_mems", 
+                    [16 * 10e9, 16 * 10e9, 16 * 10e9, 16 * 10e9])
 
 sample_prob = 0.7
-
 d_model = 512
+
 
 def post_process_device_choice(device_choice,batch_size):
     print("before process")
@@ -164,8 +163,10 @@ def generate_mask(device_choice):
     return mask
 
 
-class strategy_pool(object):
-    def __init__(self,folder_path,node_num,index_id_dict,env,batch_size,init_group,sink):
+class StrategyPool(object):
+    def __init__(self, folder_path, node_num, index_id_dict, env, batch_size,
+                 init_group, sink):
+        print('[INFO] StrategyPool.__init__()')
         self.folder_path = folder_path
         self.node_num = node_num
         self.index_id_dict = index_id_dict
@@ -184,7 +185,10 @@ class strategy_pool(object):
         else:
             self.strategies = mp.Manager().list()
 
-        self.rewards = [item["reward"] for item in self.strategies] if len(self.strategies) else [-sys.maxsize]
+        if len(self.strategies) > 0:
+            self.rewards = [item["reward"] for item in self.strategies]
+        else:
+            self.rewards = [-sys.maxsize]
         self.batch_size = batch_size
 
         # even data parallel 1
@@ -196,10 +200,19 @@ class strategy_pool(object):
             group = np.array(self.init_group)
             device_choice = np.ones(shape=(self.init_group_num, len(devices)), dtype=np.int32)
             mask = generate_mask(device_choice)
-            ps_or_reduce = np.ones(shape=(self.init_group_num, ), dtype=np.int32)
-            reward,out_of_memory = self.env.get_reward2(device_choice, ps_or_reduce, self.index_id_dict,self.sink,group,record=True,record_name="nccl_dp_graph.pbtxt",record_best=False,from_strategy_pool=True)
+            ps_or_reduce = np.ones(shape=(self.init_group_num,), dtype=np.int32)
+            print('Fisrt env.get_reward2() starts!')
+            reward, out_of_memory = self.env.get_reward2(
+                                        device_choice, ps_or_reduce,
+                                        self.index_id_dict, self.sink, group,
+                                        record=True,
+                                        record_name="nccl_dp_graph.pbtxt",
+                                        record_best=False,
+                                        from_strategy_pool=True)
+            print('Fisrt env.get_reward2() finishes!')
             if not out_of_memory:
-                self.insert(reward, device_choice, mask,ps_or_reduce,group,force_insert=True)
+                self.insert(reward, device_choice, mask, ps_or_reduce,group,
+                            force_insert=True)
 
             group = np.array(self.init_group)
             device_choice = np.ones(shape=(self.init_group_num, len(devices)), dtype=np.int32)
@@ -233,8 +246,8 @@ class strategy_pool(object):
 
             group = np.array(self.init_group)
             device_choice = np.array([np.arange(len(devices))%1 for i in range(self.init_group_num)])
-            for i,item in enumerate(device_choice):
-                item[0]=1
+            for i, item in enumerate(device_choice):
+                item[0] = 1
             mask = generate_mask(device_choice)
 
             ps_or_reduce = np.ones(shape=(self.init_group_num,), dtype=np.int32)
@@ -247,7 +260,7 @@ class strategy_pool(object):
             group = np.array(self.init_group)
             device_choice = np.array([np.arange(len(devices))%1 for i in range(self.init_group_num)])
             for i,item in enumerate(device_choice):
-                item[i%len(devices)]=1
+                item[i%len(devices)] = 1
             mask = generate_mask(device_choice)
 
             ps_or_reduce = np.ones(shape=(self.init_group_num,), dtype=np.int32)
@@ -274,6 +287,7 @@ class strategy_pool(object):
                 self.insert(reward, device_choice, mask,ps_or_reduce,group,force_insert=True)
             else:
                 print(self.folder_path,"model_parallel2 oom")
+            print('[INFO] StrategyPool.__init__() finishes!')
 
     def get_length(self):
         return len(self.strategies)
@@ -281,36 +295,42 @@ class strategy_pool(object):
     def get_stratey_list(self,device_choice,ps_or_reduce):
         new_device_array = device_choice
         ps_or_reduce = np.reshape(ps_or_reduce, (ps_or_reduce.shape[0], 1))
-        new_device_array = np.concatenate((ps_or_reduce,new_device_array),axis=1)
+        new_device_array = np.concatenate((ps_or_reduce,new_device_array), axis=1)
         return new_device_array.tolist()
 
     def save_strategy_pool(self):
-        if len(self.strategies)==0:
+        if len(self.strategies) == 0:
+            print('No strategy to be saved.')
             return
         with open(self.folder_path + "/pool.pkl", "wb") as f:
             pkl.dump(list(self.strategies),f)
+
         with open(self.folder_path + "/pool.log", "w") as f:
             f.write(str([item["reward"] for item in self.strategies]))
             for i in range(4):
                 f.write("\nstrategy"+str(i)+":\n")
                 f.write(str(self.strategies[np.random.randint(len(self.strategies))]["strategy_list"]))
 
-
-    def insert(self,reward,device_choice,replica_mask,ps_or_reduce,group,force_insert=False):
+    def insert(self, reward, device_choice, replica_mask, ps_or_reduce, group,
+               force_insert=False):
         def comp_fc(item):
             item1 = item[:int(len(item) / 2)]
             item2 = item[int(len(item) / 2):]
             return 0 if all(item1 == item2) else 1
+
         strategy_list = self.get_stratey_list(device_choice, ps_or_reduce)
+
         if force_insert:
-            self.strategies.append({"replica_mask": replica_mask, "strategy_list": strategy_list, "reward": reward,
-                                    "device_choice": device_choice, "ps_or_reduce": ps_or_reduce,"group":group})
+            self.strategies.append({"replica_mask": replica_mask,
+                    "strategy_list": strategy_list, "reward": reward,
+                    "device_choice": device_choice, "ps_or_reduce": ps_or_reduce,
+                    "group":group})
 
             self.save_strategy_pool()
             self.rewards.append(reward)
             return
 
-        if len(self.strategies)<20 and reward>np.mean(self.rewards):
+        if len(self.strategies) < 20 and reward > np.mean(self.rewards):
             for j,strategy in enumerate(self.strategies):
                 exist_device_choice = (strategy["device_choice"])
                 if len(exist_device_choice)!=len(device_choice):
@@ -367,8 +387,9 @@ def reward_func(item):
 
 
 class Environment(object):
-    def __init__(self,gdef_path,devices,folder_path,batch_size,init_group,sink):
-
+    def __init__(self, gdef_path, devices, folder_path, batch_size,
+                 init_group, sink):
+        print('[INFO] Environment.__init__')
         self.gdef = graph_pb2.GraphDef()
         with open(gdef_path,"r")as f:
             txt = f.read()
@@ -381,10 +402,11 @@ class Environment(object):
         self.devices =devices
         self.sink =sink
         self.init_group = init_group
-        with open("nccl_model.pkl","rb") as f:
+        #with open("nccl_model.pkl","rb") as f:
+        with open("data/nccl_model.pkl","rb") as f:
             self.nccl_model=pkl.load(f)
 
-        bandwidth = config_dict.get("bandwidth",None)
+        bandwidth = config_dict.get("bandwidth", None)
         if bandwidth==None:
             self.intra = "5000"
             self.inter = "1250"
@@ -399,12 +421,13 @@ class Environment(object):
         self.name_cost_dict = self.get_name_cost_dict()
         if os.path.exists(folder_path+"/best_time.log"):
             with open(folder_path+"/best_time.log", "r") as f:
+                # If load load() error happens,
+                # remove last } in the best_time.log
                 tmp = json.load(f)
                 for key,value in tmp.items():
                     self.best_strategy[key] = value
             with open(self.folder_path+"/best_time.log", "w") as f:
-
-                cost_dict=dict()
+                cost_dict = dict()
                 for key, value in self.name_cost_dict.items():
                     name = key[0]
                     replica_num=key[1]
@@ -415,15 +438,17 @@ class Environment(object):
             _tge = tge.TGE(copy.deepcopy(self.null_gdef), self.devices, sink)
             time_mem_tuple = _tge.custom(self.best_strategy["strategy"]).fill_batchsize(self.batch_size).set_nccl_model(self.nccl_model).use_collective().set_bandwidth(self.intra, self.inter).evaluate(self.name_cost_dict,self.folder_path+"/best_graph.json")
 
-            best_graph_def =tge.TGE(copy.deepcopy(self.null_gdef), self.devices, self.sink).custom(self.best_strategy["strategy"]).replace_placeholder(batch_size).use_collective().compile().get_result()
+            best_graph_def = tge.TGE(copy.deepcopy(self.null_gdef), self.devices, self.sink).custom(self.best_strategy["strategy"]).replace_placeholder(batch_size).use_collective().compile().get_result()
             with open(self.folder_path+"/best_graph.pbtxt", "w") as f:
                 f.write(str(best_graph_def))
+        print('[INFO] Environment.__init__ finishes!')
 
-
-
-
-
-    def get_reward2(self,device_choice,ps_or_reduce,index_id_dict,sink,group,record=False,record_name=None,record_best=True,from_strategy_pool=False):
+    def get_reward2(self, device_choice, ps_or_reduce, index_id_dict, sink, group,
+                    record=False,
+                    record_name=None,
+                    record_best=True,
+                    from_strategy_pool=False):
+        print('get_reward2 is called.')
         out_of_memory=False
         #new_device_array = np.zeros(shape=(device_choice.shape[0],len(devices)),dtype=np.int32)
 
@@ -439,10 +464,13 @@ class Environment(object):
         strategy = {index_id_dict[index]:new_device_array[self.init_group[index]].tolist() for index in range(len(index_id_dict))}
         strategy = {name: strategy.get(name, list(strategy.values())[0]) for name in name_list}
 
-
+        print('TGE instance starts!')
         _tge = tge.TGE(copy.deepcopy(self.null_gdef), self.devices,sink)
+        print('TGE instance finishes!')
 
+        print('///// --> problem! TGE custom() starts!')
         time_mem_tuple = _tge.custom(strategy).fill_batchsize(self.batch_size).set_nccl_model(self.nccl_model).use_collective().set_bandwidth(self.intra,self.inter).evaluate(self.name_cost_dict)
+        print('///// --> problem! TGE custom() finishes!')
         time = time_mem_tuple[0]
         mem_list = time_mem_tuple[1]
         time = float(time)/(10**3)
@@ -457,12 +485,11 @@ class Environment(object):
             self.best_strategy["strategy"] = strategy
             self.best_strategy["group"] = self.init_group
             with open(self.folder_path+"/best_time.log", "w") as f:
-
-                cost_dict=dict()
+                cost_dict = dict()
                 for key, value in self.name_cost_dict.items():
                     name = key[0]
-                    replica_num=key[1]
-                    if replica_num==1:
+                    replica_num = key[1]
+                    if replica_num == 1:
                         cost_dict[name] = value
                 self.best_strategy["cost"] = cost_dict
                 json.dump(self.best_strategy.copy(), f)
@@ -481,17 +508,19 @@ class Environment(object):
         return -np.float32(np.sqrt(time)),out_of_memory
 
     def get_name_cost_dict(self):
-        with open(self.folder_path+"/new_cost.pkl", "rb") as f:
+        #with open(self.folder_path+"/new_cost.pkl", "rb") as f:
+        with open(self.folder_path+"/cost.pkl", "rb") as f:
             name_cost_dict = pkl.load(f)
         return name_cost_dict
 
 
-
-class Graph_item():
-    def __init__(self,folder_path,sink):
-        self.dataset = load_cora(folder_path,NewWhiteSpaceTokenizer())
+class GraphItem():
+    def __init__(self, folder_path, sink):
+        print('[INFO] GraphItem.__init__')
+        self.dataset = load_cora(folder_path, NewWhiteSpaceTokenizer())
         adj = self.dataset.adj_matrix(sparse=True)
-        feature_matrix, feature_masks = self.dataset.feature_matrix(bag_of_words=False, sparse=False)
+        feature_matrix, feature_masks = self.dataset.feature_matrix(
+                                            bag_of_words=False, sparse=False)
 
         if "data/graph7" in folder_path:
             self.batch_size = batch_sizes[1]
@@ -506,7 +535,7 @@ class Graph_item():
         else:
             self.master = False
 
-        ####preprocess features################
+        ####preprocess features####
         feature_matrix = StandardScaler().fit_transform(feature_matrix)
         self.nb_nodes = feature_matrix.shape[0]
         '''
@@ -539,36 +568,45 @@ class Graph_item():
             with open(folder_path+"/init_group.json","r") as f:
                 self.init_group =json.load(f)
         else:
-           # self.init_group = tge.TGE(copy.deepcopy(self.gdef ), devices, sink).get_groups()
+           #self.init_group = tge.TGE(copy.deepcopy(self.gdef ), devices, sink).get_groups()
             self.init_group = self.get_colocation_group()
-            with open(folder_path+"/new_cost.pkl", "rb") as f:
+            #with open(folder_path+"/new_cost.pkl", "rb") as f:
+            with open(folder_path+"/cost.pkl", "rb") as f:
                 name_cost_dict = pkl.load(f)
             self.init_group = group_around_topk_costs(self.gdef,self.init_group,name_cost_dict,group_num)
             with open(folder_path+"/init_group.json","w") as f:
                 json.dump(self.init_group,f)
         #print(self.init_group)
 
-        ########################create simulator###########################################
-        self.env = Environment(folder_path+"/null_graph.pbtxt",devices,folder_path,self.batch_size,self.init_group,sink)
-        self.average_reward=0
+        ########################create simulator########################
+        self.env = Environment(folder_path+"/null_graph.pbtxt", devices,
+                            folder_path, self.batch_size, self.init_group, sink)
+        self.average_reward = 0
         self.best_reward = 1-sys.maxsize
         self.best_replica_num = list()
         self.best_device_choice = np.zeros(shape=(self.nb_nodes, len(devices)), dtype=np.int32)
         self.best_ps_or_reduce = list()
         self.folder_path = folder_path
+
         ##############create strategy pool#############################
-        self.strategy_pool = strategy_pool(folder_path,self.nb_nodes,self.index_id_dict,self.env,self.batch_size,self.init_group,self.sink)
-        self.best_group= self.strategy_pool.choose_strategy()["group"] if self.strategy_pool.choose_strategy()!=None else np.arange(max(self.init_group)+1)
+        self.strategy_pool = StrategyPool(folder_path, self.nb_nodes,
+                                    self.index_id_dict, self.env,
+                                    self.batch_size, self.init_group, self.sink)
+        if self.strategy_pool.choose_strategy()!=None:
+            self.best_group = self.strategy_pool.choose_strategy()["group"]
+        else:
+            self.best_group = np.arange(max(self.init_group)+1)
         self.avg = None
         self.oom = []
         self.train_place = False
-        self.counter=0
+        self.counter = 0
         self.small_co = 0.001*5*5*1000
-        self.large_co =self.small_co*50
+        self.large_co = self.small_co*50
         self.co_entropy = self.small_co
         self.place_lr = lr
-        self.record_time =[]
+        self.record_time =[ ]
         self.mems = [np.zeros([128, bsz, d_model], dtype=np.float32) for layer in range(n_layer)]
+
     def get_colocation_group(self):
         leaders = []
         group = []
@@ -592,19 +630,14 @@ class Graph_item():
         print(len(leaders))
         print(len(group))
         return group
+
     def set_session_and_network(self,sess,place_gnn):
         self.sess =sess
         self.place_gnn = place_gnn
 
-
-
-
-
-
-    def sample(self,epoch):
-
+    def sample(self,step):
         global sample_prob
-        sample_prob = min(1+0.1*(epoch//60),1)
+        sample_prob = min(1+0.1*(step//60),1)
 
         print("[{}] sample_prob = {}".format(self.folder_path, sample_prob))
 
@@ -646,9 +679,9 @@ class Graph_item():
         def argmax_choice(item):
             choice1 = np.argmax(item)
             return choice1
+
         ti = time.time()
         output = self.outputs[0]
-
 
         device_choice = np.zeros(shape=(output.shape[0]),dtype=np.int32)
         random_size = np.random.randint(1,output.shape[0])
@@ -698,8 +731,6 @@ class Graph_item():
         self.group[i]=(group)
         self.replica_masks[i]=(replica_mask)
 
-
-
     def parallel_process_output(self):
         thres = []
         for i in range(sample_times+1):
@@ -712,6 +743,7 @@ class Graph_item():
         print("{} finish!".format(self.folder_path))
 
         #print("Group:",self.group[0])
+
     def post_parallel_process(self):
         for i in range(sample_times+1):
             if self.rewards[i] > self.best_reward:
@@ -723,11 +755,11 @@ class Graph_item():
             if not self.oom[i]:
                 self.strategy_pool.insert(self.rewards[i], self.device_choices[i], self.replica_masks[i], self.ps_or_reduces[i],self.group[i])
 
-    def compute_gradients(self,epoch):
+    def compute_gradients(self,step):
         self.avg = np.mean(self.rewards) if self.avg==None else (self.avg+np.mean(self.rewards))/2
         #print("[{}] train_place = {}".format(self.folder_path, self.train_place))
         #print("[{}] Rewards = {}".format(self.folder_path, self.rewards))
-        #print("[{}] epoch = {}".format(self.folder_path, epoch))
+        #print("[{}] step = {}".format(self.folder_path, step))
         tmp_gradients = []
         for index in range(sample_times):
             #logger.debug("sample_ps:{}".format(self.ps_or_reduces[index]))
@@ -763,8 +795,8 @@ class Graph_item():
             self.co_entropy = self.large_co
         else:
             self.co_entropy = self.small_co
-        if epoch % show_interval == 0:
-            print("[{}] step = {}".format(self.folder_path,epoch))
+        if step % show_interval == 0:
+            print("[{}] step = {}".format(self.folder_path,step))
             print("[{}] time = {}".format(self.folder_path,times))
             print("[{}] average reward = {}".format(self.folder_path,self.avg))
             print("[{}] overall entropy:{}".format(self.folder_path,self.cal_entropy))
@@ -775,7 +807,7 @@ class Graph_item():
             with open(self.folder_path+"/loss.log", "a+") as f:
                 f.write("place loss:{},entropy loss:{},place+entropy loss:{},l2_loss:{}\n".format(place_loss,-self.cal_entropy*self.co_entropy,new_loss,l2_loss))
 
-        if epoch % show_interval == 0:
+        if step % show_interval == 0:
             pool_strategy = self.strategy_pool.choose_strategy()
             if pool_strategy==None:
                 return self.compute_average_gradients(tmp_gradients)
@@ -804,6 +836,7 @@ class Graph_item():
             tmp_gradients.append(gradients)
 
         return self.compute_average_gradients(tmp_gradients)
+
     def compute_average_gradients(self,tmp_gradients):
         for i,gradient in enumerate(tmp_gradients):
             if i == 0:
@@ -817,12 +850,13 @@ class Graph_item():
         #print("average gradient")
         #print(average_gradient)
         return average_gradient
-    def train(self,epoch):
+
+    def train(self,step):
 
         self.avg = np.mean(self.rewards) if self.avg==None else (self.avg+np.mean(self.rewards))/2
         print("[{}] train_place = {}".format(self.folder_path, self.train_place))
         print("[{}] Rewards = {}".format(self.folder_path, self.rewards))
-        print("[{}] epoch = {}".format(self.folder_path, epoch))
+        print("[{}] step = {}".format(self.folder_path, step))
 
         for index in range(sample_times):
             #logger.debug("sample_ps:{}".format(self.ps_or_reduces[index]))
@@ -857,8 +891,8 @@ class Graph_item():
             self.co_entropy = self.large_co
         else:
             self.co_entropy = self.small_co
-        if epoch % show_interval == 0:
-            print("[{}] step = {}".format(self.folder_path,epoch))
+        if step % show_interval == 0:
+            print("[{}] step = {}".format(self.folder_path,step))
             print("[{}] time = {}".format(self.folder_path,times))
             print("[{}] average reward = {}".format(self.folder_path,self.avg))
             print("[{}] overall entropy:{}".format(self.folder_path,self.cal_entropy))
@@ -869,7 +903,7 @@ class Graph_item():
             with open(self.folder_path+"/loss.log", "a+") as f:
                 f.write("place loss:{},entropy loss:{},place+entropy loss:{},l2_loss:{}\n".format(place_loss,-self.cal_entropy*self.co_entropy,new_loss,l2_loss))
 
-        if epoch % show_interval == 0:
+        if step % show_interval == 0:
             pool_strategy = self.strategy_pool.choose_strategy()
             if pool_strategy==None:
                 return
@@ -921,7 +955,6 @@ class new_place_GNN():
             self.train_place = tf.placeholder(dtype=tf.bool, shape=(),name="train_place")
             self.mems = [tf.placeholder(tf.float32,[128, bsz, d_model]) for _ in range(n_layer)]
             self.place_lr = tf.placeholder(dtype=tf.float32, shape=(),name="place_lr")
-
 
         with tf.variable_scope("group_nn"):
             group = self.init_group
@@ -981,7 +1014,6 @@ class new_place_GNN():
 
             _range = tf.range(tf.shape(self.sample_ps_or_reduce)[0])[:, tf.newaxis]
 
-
             self.place_reward = []
 
             indices = tf.concat((_range, self.sample_ps_or_reduce[:, tf.newaxis]), axis=1)
@@ -1009,10 +1041,7 @@ class new_place_GNN():
 
         #self.train_place_op,self.loss_l2 = model.training(self.place_loss,self.place_lr , l2_coef,vars=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='place_nn'))
 
-
     def get_gradients(self,ftr_in,bias_in,nb_nodes,sample_ps_or_reduce,ps_mask,sample_device_choice,time_ratio,coef_entropy,mems,init_group,place_lr):
-
-
         device_choice = np.zeros(shape=(sample_device_choice.shape[0],),dtype=np.int32)
         for i in range(sample_device_choice.shape[0]):
             the_sum =sum(sample_device_choice[i])
@@ -1038,7 +1067,6 @@ class new_place_GNN():
         feed_dict[self.coef_entropy]=coef_entropy
         feed_dict[self.train_place] = True
 
-
         feed_dict[self.place_lr]=place_lr
 
         feed_dict[self.init_group]=init_group
@@ -1060,16 +1088,14 @@ class new_place_GNN():
                 print(gradient)
                 print("place loss")
                 print(loss)
-                assert (1==2)
+                raise ValueError('Some gradients have NaN values.')
         return -place_reward,l2_loss,loss,mems,entropy,gradients
 
     def apply_gradients(self,gradients,place_lr):
         feed_dict = {i:d for i,d in zip(self.net_gradients,gradients)}
         feed_dict[self.place_lr] = place_lr
-        _= self.sess.run(self.apply_grad,
+        _ = self.sess.run(self.apply_grad,
                      feed_dict=feed_dict)
-
-
 
     def get_replica_num_prob(self,ftr_in,bias_in,nb_nodes,mems,init_group):
         fetch_list =[self.device_choices]
@@ -1077,8 +1103,6 @@ class new_place_GNN():
         fetch_list.append(self.logits_before)
         fetch_list.append(self.logits)
         fetch_list.append(self.group)
-
-
 
         feed_dict = {}
         feed_dict[self.ftr_in]=ftr_in
@@ -1101,31 +1125,41 @@ class new_place_GNN():
         return outputs
 
 
-def main_entry():
+def main():
+    print('[INFO] main() is called.')
     models = []
-    for i,feature_folder in enumerate(feature_folders):
-        item = Graph_item(feature_folder,sinks[i])
+    print('feature_folders:', feature_folders)
+    for i, feature_folder in enumerate(feature_folders):
+        item = GraphItem(feature_folder, sinks[i])
         models.append(item)
+    print('models:', models)
     config = tf.ConfigProto(allow_soft_placement=True)
     config.gpu_options.allow_growth = True
     with tf.Session(config=config) as sess:
-        place_gnn = new_place_GNN(sess,ft_size=models[0].ft_size)
+        place_gnn = new_place_GNN(sess, ft_size=models[0].ft_size)
 
+        # TODO: Make flag to restore ckpt
+        """
         saver = tf.train.Saver()
         try:
-            saver.restore(sess, checkpt_file)
+            saver.restore(sess, ckpt_file)
         except:
-            init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
+            init_op = tf.group(tf.global_variables_initializer(),
+                                tf.local_variables_initializer())
             sess.run(init_op)
+        """
+        saver = tf.train.Saver()
+
+        init_op = tf.group(tf.global_variables_initializer(),
+                           tf.local_variables_initializer())
+        sess.run(init_op)
 
         for model in models:
             model.set_session_and_network(sess,place_gnn)
 
-
-        for epoch in range(nb_epochs):
+        for step in range(num_steps):
             for model in models:
-                model.sample(epoch)
-
+                model.sample(step)
 
             processes=[]
             for model in models:
@@ -1139,13 +1173,12 @@ def main_entry():
             gradients = []
             for model in models:
                 model.post_parallel_process()
-                #model.train(epoch)
-                gradients.append(model.compute_gradients(epoch))
+                #model.train(step)
+                gradients.append(model.compute_gradients(step))
 
             for i, gradient in enumerate(gradients):
                 #print(type(gradient), len(gradient))
                 #print(type(gradient[0]), len(gradient[0]))
-
                 if i == 0:
                     average_gradient = gradient
                 else:
@@ -1156,11 +1189,12 @@ def main_entry():
             #print("Gradients:",average_gradient)
             place_gnn.apply_gradients(average_gradient,lr)
 
-            if epoch % (show_interval*30 )== 0:
-                saver.save(sess, checkpt_file)
-
-        sess.close()
+            if step % (show_interval * 30) == 0:
+                if not os.path.exists(ckpt_file):
+                    os.makedirs(ckpt_file)
+                print('==> Save model at step {}'.format(step))
+                saver.save(sess, ckpt_file)
 
 
 if __name__ == '__main__':
-    main_entry()
+    main()

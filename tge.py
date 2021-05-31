@@ -65,11 +65,13 @@ libtge.destruct_names.restype = None
 libtge.remove_dangling_nodes.argtypes = [ctypes.c_void_p]
 libtge.remove_dangling_nodes.restype = None
 
+
 def chain(func):
     def chained(self, *args, **kwargs):
         func(self, *args, **kwargs)
         return self
     return chained
+
 
 class TGE:
     def __init__(self, graph_def, device_list, sinks=["GradientDescent"]):
@@ -117,10 +119,13 @@ class TGE:
 
     @chain
     def compile(self):
+        print('compile() is called.')
         assert self.strategy is not None
         self._create_target()
         self._edit()
+        print('libtge.compile() starts!')
         libtge.compile(self.graph, self.target)
+        print('libtge.compile() finishes!')
         self.compiled = True
 
         # for backward compatibility
@@ -139,10 +144,14 @@ class TGE:
             libtge.heft_rank(self.target, self.profiler)
 
     def evaluate(self, profile_dict, trace_path=""):
+        print('evaluate is called.')
         if not self.compiled: # for backward compatibility
             self.compile()
-        self.remove_dangling_nodes()
-
+            print('compile() finishes!')
+        print('[INFO] remove_dangling_nodes() raises error, so it jumps now.')
+        #print('remove_dangling_nodes() starts!')
+        #self.remove_dangling_nodes() # --> raises error!
+        #print('remove_dangling_nodes() finishes!')
         trace_path = trace_path.encode('ascii')
         memory = (ctypes.c_uint64 * len(self.devices))(*(0 for x in self.devices))
         self._create_profiler(profile_dict)
@@ -197,13 +206,17 @@ class TGE:
 
     @chain
     def remove_collocation_hint(self):
-        assert self.compiled
+        assert self.compiled # self.compiled must be True
+        print('libtge.remove_collocation_hint starts!')
         libtge.remove_collocation_hint(self.target)
+        print('libtge.remove_collocation_hint finishes!')
 
     @chain
     def remove_shape_hint(self):
-        assert self.compiled
+        assert self.compiled # self.compiled must be True
+        print('libtge.remove_shape_hint starts!')
         libtge.remove_shape_hint(self.target)
+        print('libtge.remove_shape_hint finishes!')
 
     @chain
     def destruct_names(self):
@@ -213,19 +226,27 @@ class TGE:
     @chain
     def remove_dangling_nodes(self):
         assert self.compiled
+        print('libtge.remove_dangling_nodes starts!')
+        """Error message
+        'thread '<unnamed>' panicked at 'no entry found for key', src/libcore/option.rs:1188:5'
+        """
         libtge.remove_dangling_nodes(self.target)
+        print('libtge.remove_dangling_nodes finishes!')
 
     @chain
     def set_topology(self, links, paths):
         """
-        links: an array contains the bandwidth of each link. The unit is bytes/time where time is the same unit of profiling
-        paths: an array where the i*n+j element is an array of link indexes that in the path of i->j.
+        links: an array contains the bandwidth of each link.
+               The unit is bytes/time where time is the same unit of profiling
+        paths: an array where the i*n+j element is an array of link indexes
+               that in the path of i->j.
         """
         self.links = links
         self.paths = paths
 
     @chain
     def set_bandwidth(self, intra, inter):
+        print('set_bandwidth is called.')
         """convenient method for setting a topology that devices on the same task are independently connected, while devices on different tasks shares a unique link"""
         task_map = { device: int(re.findall(r"task:(\d+)/", device)[0]) for device in self.devices }
         if type(intra) is not dict: # for backward compatibility
@@ -248,9 +269,12 @@ class TGE:
         self.nccls = model
 
     def _set_option(self, name, value):
+        print('_set_option is called. with name: {}'.format(name))
         name_raw = str(name).encode('ascii')
         value_raw = str(value).encode('ascii')
+        print('libtge.set_option() starts!')
         libtge.set_option(self.graph, name_raw, len(name_raw), value_raw, len(value_raw))
+        print('libtge.set_option() finishes!')
 
     @chain
     def replace_placeholder(self, batchsize):
@@ -277,6 +301,7 @@ class TGE:
 
     @chain
     def custom(self, decisions): # for backward compatibility
+        print('custom() is called.')
         self.set_strategy(decisions)
 
     @chain
