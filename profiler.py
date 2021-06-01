@@ -8,7 +8,7 @@ from sklearn.linear_model import HuberRegressor
 
 from tensorflow.python.ops import collective_ops
 
-PROFILE_NUM = 1 # 5
+PROFILE_NUM = 5
 MAX_NUM_RETRAIN_TO_CONVERGE = 3
 
 class NcclProfiler:
@@ -39,23 +39,45 @@ class NcclProfiler:
     def profile(self):
         results = {}
 
+        # Intra tasks
         for task, devs in self.devices.items():
-            profile_data = [x for _ in range(PROFILE_NUM) for x in self._profile(devs)]
+            profile_data = [x for _ in range(PROFILE_NUM) \
+                                for x in self._profile(devs)]
             print('profile_data:', profile_data)
             results[','.join(devs)] = self._model(profile_data)
 
+        # Inter tasks
+        # Example of self.devices: {
+        #   '0': ['/job:worker/replica:0/task:0/device:GPU:0'],
+        #   '1': ['/job:worker/replica:0/task:1/device:GPU:0'],
+        #   '2': ['/job:worker/replica:0/task:2/device:GPU:0']
+        # }
+        comb_inter_tasks = list()
+        for i in range(2, len(self.devices)+1): # Min: 2, Max: # of inter tasks
+            for t in itertools.combinations(self.devices.keys(), i):
+                comb_inter_tasks.append(t)
+        print('[INFO] combination of inter_tasks:', comb_inter_tasks)
+
+        for tasks in comb_inter_tasks:
+            # the first (alphabet order) device is the leader of the task
+            devs = [self.devices[t][0] for t in tasks]
+            profile_data = [x for _ in range(PROFILE_NUM) \
+                                for x in self._profile(devs)]
+            results[','.join(sorted(devs))] = self._model(profile_data)
+
+        print('[INFO] NCCL profile results:', results)
         return results
 
     def _model(self, data):
         for num_train in range(MAX_NUM_RETRAIN_TO_CONVERGE):
             try:
-                print('Start train linear regression model')
-                print('Number of train:', num_train + 1)
-                model1 = HuberRegressor().fit([[x] for x, y in data if x <= 2**9],
-                                            [y for x, y in data if x <= 2**9])
-                model2 = HuberRegressor().fit([[x] for x, y in data if x >= 2**10],
-                                            [y for x, y in data if x >= 2**10])
-
+                print('[INFO] Start train linear regression model.')
+                print('[INFO] Number of train:', num_train + 1)
+                model1 = HuberRegressor().fit([[x] for x, y in data if x < 2**8],
+                                            [y for x, y in data if x < 2**8])
+                model2 = HuberRegressor().fit([[x] for x, y in data if x > 2**10],
+                                            [y for x, y in data if x > 2**10])
+                print('[INFO] model is successfully trained.')
                 return [model1.coef_[0].item(), model1.intercept_.item(),
                         model2.coef_[0].item(), model2.intercept_.item()]
             except Exception as e:
