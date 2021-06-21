@@ -138,8 +138,8 @@ class DatasetManager:
         self.target_word2id, self.target_id2word = self._load_vocab_file(
             prefix + '.' + self.target_lang)
 
-        print(f"'{self.source_lang}' vocabulary size:", len(self.source_word2id))
-        print(f"'{self.target_lang}' vocabulary size:", len(self.target_word2id))
+        print("'{}' vocabulary size: {}".format(self.source_lang, len(self.source_word2id)))
+        print("'{}' vocabulary size: {}".format(self.target_lang, len(self.target_word2id)))
 
     def _sentence_pair_iterator(self, file1, file2, seq_len):
         """
@@ -156,7 +156,7 @@ class DatasetManager:
         """
 
         def line_count(filename):
-            return int(os.popen(f'wc -l {filename}').read().strip().split()[0])
+            return int(os.popen('wc -l {}'.format(filename)).read().strip().split()[0])
 
         def parse_line(line, word2id):
             line = line.strip().lower().split()
@@ -166,7 +166,7 @@ class DatasetManager:
             word_ids += [PAD_ID] * max(0, seq_len - len(word_ids))
             return word_ids
 
-        print(f"Num. lines in '{file1}': {line_count(file1)}")
+        print("Num. lines in '{}': {}".format(file1, line_count(file1)))
         assert line_count(file1) == line_count(file2)
         line_pairs = list(zip(open(file1), open(file2)))
         random.shuffle(line_pairs)

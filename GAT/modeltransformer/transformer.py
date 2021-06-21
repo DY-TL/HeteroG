@@ -413,7 +413,7 @@ class Transformer(BaseModelMixin):
         out = inp  # now, (batch, seq_len, embed_size)
         with tf.variable_scope(scope):
             for i in range(self.num_enc_layers):
-                out = self.encoder_layer(out, input_mask, f'enc_{i}')
+                out = self.encoder_layer(out, input_mask, 'enc_{}'.format(i))
         return out
 
     def decoder_layer(self, target, enc_out, input_mask, target_mask, scope):
@@ -430,7 +430,7 @@ class Transformer(BaseModelMixin):
         out = target
         with tf.variable_scope(scope):
             for i in range(self.num_enc_layers):
-                out = self.decoder_layer(out, enc_out, input_mask, target_mask, f'dec_{i}')
+                out = self.decoder_layer(out, enc_out, input_mask, target_mask, 'dec_{}'.format(i))
         return out
 
     def label_smoothing(self, inp):
@@ -563,7 +563,7 @@ class Transformer(BaseModelMixin):
 
     def _check_variable(self, v, name):
         if v is None:
-            raise ValueError(f"Call build_model() to initialize {name}.")
+            raise ValueError('Call build_model() to initialize {}.'.format(name))
         return v
 
     @property

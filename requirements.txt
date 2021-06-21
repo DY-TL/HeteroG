@@ -7,3 +7,6 @@ scipy
 networkx
 sklearn
 matplotlib
+gym
+nltk
+click
