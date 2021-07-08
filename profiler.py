@@ -9,7 +9,7 @@ from sklearn.linear_model import HuberRegressor
 from tensorflow.python.ops import collective_ops
 
 PROFILE_NUM = 5
-MAX_NUM_RETRAIN_TO_CONVERGE = 3
+MAX_NUM_RETRAIN_TO_CONVERGE = 10
 
 class NcclProfiler:
     def __init__(self, devices, target, seed=3399):
@@ -103,16 +103,17 @@ class NcclProfiler:
             run_meta = tf.compat.v1.RunMetadata()
             run_opt = tf.compat.v1.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
             with tf.Session(self.target) as sess:
+                sess.run(nccl_ops)
                 sess.run(nccl_ops, options=run_opt, run_metadata=run_meta)
 
             collective_ops_times = []
             for d in run_meta.step_stats.dev_stats:
                 for node in d.node_stats:
                     if 'CollectiveReduce' in node.node_name:
-                        print('trnasfer time (msecs):', node.all_end_rel_micros)
+                        print('Transfer time (msecs):', node.all_end_rel_micros)
                         collective_ops_times.append(node.all_end_rel_micros)
             time = min(collective_ops_times)
-            print('min transfer time (msecs):', time)
+            print('Min transfer time (msecs):', time)
             result.append((size, time))
 
         return result
@@ -127,9 +128,12 @@ class Profiler:
         self.target = target
         self.profiled = set()
         self.cache = {} # TODO: persistence? LRU?
+        print('Profiler.__init__')
+        print('sefl.sinks:', sinks)
 
     def _profile(self, device, run_meta):
         if run_meta is None:
+            print('[gc] run_meta is None')
             tf.reset_default_graph()
             tf.import_graph_def(self.graph_def)
             graph = tf.get_default_graph()
@@ -169,5 +173,6 @@ class Profiler:
 
     def profile(self, node_name, device, run_meta=None):
         if device not in self.profiled:
+            print('[gc] self._profile() is called.')
             self._profile(device, run_meta)
         return self.cache.get((node_name, device), 0)

@@ -148,14 +148,17 @@ class TGE:
         if not self.compiled: # for backward compatibility
             self.compile()
             print('compile() finishes!')
-        print('[INFO] remove_dangling_nodes() raises error, so it jumps now.')
-        #print('remove_dangling_nodes() starts!')
-        #self.remove_dangling_nodes() # --> raises error!
-        #print('remove_dangling_nodes() finishes!')
+
+        print('remove_dangling_nodes() starts!')
+        # If optimizer is not equal globaly, it raises error.
+        # Take a look at 'sinks' in GAT/config.txt.
+        self.remove_dangling_nodes()
+        print('remove_dangling_nodes() finishes!')
         trace_path = trace_path.encode('ascii')
         memory = (ctypes.c_uint64 * len(self.devices))(*(0 for x in self.devices))
         self._create_profiler(profile_dict)
-        result = libtge.evaluate(self.target, self.profiler, trace_path, len(trace_path), memory)
+        result = libtge.evaluate(self.target, self.profiler, trace_path,
+                                 len(trace_path), memory)
         self.target = None # evaluator now takes the ownership of target
 
         return result, list(memory)
